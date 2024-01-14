@@ -1,0 +1,88 @@
+---
+title: "Reality vs Academia World"
+author: "Fabrizio Dimino"
+date: "2023-12-13"
+output: word_document
+---
+
+```{r setup}
+library('qrmdata')
+library('xts')
+library('QRM')
+
+# Load SP500 index
+data('SP500')
+
+# Extract 2007-2010
+sp07_10 <- SP500['2007/2010']
+
+# Compute the log-returns of sp07_10 daily and monthly
+sp07_10_x <- na.omit(diff(log(sp07_10)))
+sp07_10_x_m <- apply.monthly(sp07_10_x, sum)
+
+# Compute the length n of sp07_10_x
+n <- length(sp07_10_x)
+
+# Generate a normal sample of size n
+library('fitdistrplus')
+sp07_10_x_values <- as.numeric(coredata(sp07_10_x))
+fitted_norm <- fitdist(sp07_10_x_values, "norm")
+parameters <- fitted_norm$estimate
+ndata <- rnorm(n) * as.vector(parameters['sd']) + as.vector(parameters['mean'])
+
+# Generate a t-distributed sample of size n
+tfit <- fit.st(sp07_10_x)
+tpars <- tfit$par.ests
+tdata <- rt(n, df = tpars[1]) * tpars[3] + tpars[2]
+
+# Make ndata and tdata into xts objects
+ndatax <- xts(ndata, time(sp07_10_x))
+tdatax <- xts(tdata, time(sp07_10_x))
+
+# Merge data and plot
+alldata <- merge(sp07_10_x, ndatax, tdatax)
+plot.zoo(alldata, type='h', ylim = range(alldata))
+
+# Real returns often show volatility clustering. It indicates that in the data of real returns we often observe periods when volatility is high and occurs in clusters, that is, periods of high volatility followed by other similar periods, instead of being evenly distributed over time.
+
+
+##Sample Autocorrelation Function (ACF)
+# Plot the acfs of sp07_10_x, ndata, and tdata
+acf(sp07_10_x)
+acf(ndata)
+acf(tdata)
+
+# Plot the acfs of the absolute values
+acf(abs(sp07_10_x))
+acf(abs(ndata))
+acf(abs(tdata))
+
+# Plot the acfs of the squares of the values
+acf(sp07_10_x^2)
+acf(ndata^2)
+acf(tdata^2)
+
+## The comparison of ACF plots indicates differences in serial correlation behavior between real returns and simulated data due to volatility.
+
+## Especially, when we look at absolute or squared return data, we can notice differences.The serial correlation in absolute or squared returns is a consequence of volatility, which causes large returns to be followed by further large returns, although not necessarily of the same sign.
+
+
+# Testing the iid Hypothesis with the Ljung-Box Test
+# Apply Ljung-Box tests to sp07_10_x
+Box.test(sp07_10_x, lag = 10, type = 'Ljung')
+
+# Apply Ljung-Box tests to absolute values of sp07_10_x
+Box.test(abs(sp07_10_x), lag = 10, type = 'Ljung')
+
+## The rejection of the hypothesis of no serial correlation indicates differences between real returns and the iid assumption, especially noticeable in absolute value series.
+
+## Such a low p-value suggests that there is significant statistical evidence to reject the null hypothesis of no autocorrelation in the data.
+
+# Apply Ljung-Box tests to raw and absolute values of sp07_10_x_m
+Box.test(sp07_10_x_m, lag = 10, type = "Ljung")
+Box.test(abs(sp07_10_x_m), lag = 10, type = "Ljung")
+
+## When we use monthly returns, the game changes especially with abs values.
+
+## This analysis demonstrates the importance of considering volatility and its impact on serial correlation when comparing real-world financial returns with theoretical models.
+```
