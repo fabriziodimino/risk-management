@@ -1,0 +1,127 @@
+---
+title: "Risk Modeling"
+author: "Fabrizio Dimino"
+date: "2023-12-02"
+output:
+  word_document: default
+  pdf_document: default
+---
+
+```{r setup}
+library(quantmod)
+
+# Fetch IVE ETF data
+getSymbols('IVE', from = "2010-01-01", to = "2023-09-30")
+IVE <- to.monthly(IVE) # in this work, I use monthly data
+s0 <- IVE$IVE.Adjusted[[1]]
+IVE$log.returns <- log(IVE$IVE.Adjusted / lag(IVE$IVE.Adjusted))
+IVE <- na.omit(IVE)
+
+# Calibration of Parameters for Geometric Brownian Motion (GBM)
+sigma_hat <- sd(IVE$log.returns) * sqrt(12)
+mu_hat <- mean(IVE$log.returns) * 12 + sigma_hat^2 / 2
+calibr_values <- data.frame(mu_hat, sigma_hat)
+
+## MC Simulation, assuming that the initial price is given by the last closing price from the week of Jan 2010.
+dt <- 1 / 12
+
+GBM_t <- function(n) {
+  dRt_seq <- rnorm(164, (mu_hat - sigma_hat^2 / 2) * dt, sigma_hat * sqrt(dt))
+  St <- s0 * exp(cumsum(dRt_seq))
+  return(St)
+}
+
+# Simulate 1000 price paths
+s_mat <- sapply(1:1000, GBM_t)
+s_mat <- rbind(rep(s0, 1000), s_mat)
+
+# Visualization of Simulated Price Paths
+plot(s_mat[, 1], type = "l", xlab = "Month", ylab = "Price", 
+     main = "Geometric Brownian Motion: Simulated Price Path (1 out of 1000)")
+
+# To ensure the results are correct, it's been computed the simulated conditional expectation and variance of ST given S0
+s165_sim <- s_mat[165, ]
+s165.exp.sim <- mean(s165_sim)
+s165_exp <- s0 * exp(mu_hat * 164 / 12)
+s165.sig.sim <- sd(s165_sim)
+s165_sig <- sqrt((exp(sigma_hat^2 * 164 / 12) - 1) * s0^2 * exp(2 * mu_hat * 164 / 12))
+
+# Compare simulated vs. true values
+sim_vs_true <- data.frame(Mean = c(s165.exp.sim, s165_exp), Sigma = c(s165.sig.sim, s165_sig))
+rownames(sim_vs_true) <- c('Simulation', 'True Value')
+
+# In reality, there was a single trajectory of how the IVE price played out during this sample period. On the other hand, the MC simulation results in 1000 paths. We should find the most similar path to the true one.
+IVE.true<-append(s0,as.vector(IVE$IVE.Adjusted))
+IVE.true<-unlist(IVE.true)
+
+# However, there is a zero chance that a simulated path will be exactly the same as the true one; but, one can measure the distance between the simulated path and the true one over time. 
+second_norm<-function(p){
+  second_norm<-c()
+  for (i in 1:1000){
+    second_norm<- c(second_norm, sum((s_mat[,i]-IVE.true)^p)^(1/p))
+  }
+  second_norm<-matrix(second_norm,nrow=1000)  
+  second_norm<-data.frame(second_norm)
+  return(second_norm)
+}
+second_norm_2<-second_norm(p=2)
+
+a<-sort(unlist(second_norm_2))[1]
+i<-as.numeric(gsub('[A-z]',"",names(a)))
+sim_path<-xts(s_mat[,i],order.by=seq.Date(from = as.Date("2010-01-01"), to = as.Date("2023-09-30"), by = "months"))
+true_path<-xts(IVE.true,order.by=seq.Date(from = as.Date("2010-01-01"), to = as.Date("2023-09-30"), by = "months"))
+
+plot(sim_path, type="l",main="Price Path: True (blue) vs Most Similar Simulated (red)", pch=1, col = 'red')
+lines(true_path, pch=2, col = 'blue')
+```
+
+
+## Value at Risk (VaR) Calculation
+
+```{r setup1}
+# Compute the 99% VaR of the portfolio position at the end of Sep 2023
+Qc <- quantile(s165_sim * 200, 0.01)
+VaR <- mean(s165_sim) * 200 - Qc
+
+# Clearly, the above computed VaR depends on the calibrated µ and σ. Instead of computing the VaR based on the calibrated σˆ, it's been considered a sequence of values for σ ∈ {0.10, 0.11, ..., 0.49, 0.50}, while keeping µ constant and equal to the calibrated value
+mu_hat <- mean(IVE$log.returns) * 12 + sigma_hat^2 / 2
+Standard_deviation <- c()
+VaR_sigma <- c()
+
+for (i in seq(0.10, 0.50, 0.01)) {
+  sigma_hat <- i
+  s_mat1 <- sapply(1:10^5, GBM_t)
+  s165_sim1 <- s_mat1[164,]
+  F_bar <- mean(s165_sim1)
+
+  Standard_deviation <- append(Standard_deviation, sigma_hat)
+  Qc <- quantile(s165_sim1, 0.01)
+  VaR_value <- F_bar - Qc
+  VaR_sigma <- append(VaR_sigma, VaR_value)
+}
+
+plot(Standard_deviation, VaR_sigma, xlab = "Sigma hat", 
+     main = "99% Portfolio Position VaR as a function of Sigma Hat (mu hat constant)")
+
+##Instead of computing the 99% VaR of the portfolio position at the end of Sept 2023, it can be interesting to compute the monthly 99% VaR of the portfolio return using two approaches:
+# 1) historical approach: in this case, the 99% VaR corresponds to the average historical returns minus the 99% historical percentile.
+Qc_hist <- quantile(IVE$log.returns,0.01)
+VaR_hist <- mean(IVE$log.returns)- Qc_hist
+
+# 2) Parametric approach for VaR of portfolio return. This approach relies on the MC simulated paths.
+s_ret <- matrix(NA, nrow = 164, ncol = 1000)
+for (i in 1:1000) {
+  for (j in 2:165) {
+    s_ret[j - 1, i] <- log(s_mat[j, i] / s_mat[j - 1, i])
+  }
+}
+
+Qc_par <- quantile(s_ret, 0.01)
+VaR_par <- mean(s_ret) - Qc_par
+sigma_hat <- sd(IVE$log.returns) * sqrt(12)
+
+# Plotting density of simulated returns and historical returns
+plot(density(IVE$log.returns), col = 'red',
+     main = 'Density: Simulated Returns (blue) vs Historical Returns (red)')
+lines(density(s_ret), col = 'blue')
+```
