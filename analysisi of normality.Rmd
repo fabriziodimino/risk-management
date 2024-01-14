@@ -1,0 +1,87 @@
+---
+title: "Analysis of Normality"
+author: "Fabrizio Dimino"
+date: "2023-11-13"
+output:
+  word_document: default
+  pdf_document: default
+---
+
+```{r setup}
+library('qrmdata')
+library('xts')
+library('moments')
+
+# Load SP500 index
+data('SP500')
+head(SP500)
+tail(SP500)
+
+# Extract 2007-2010
+sp07_10 <- SP500['2007/2010']
+
+# Compute the log-returns of sp07_10 daily and monthly
+sp07_10_x <- na.omit(diff(log(sp07_10)))
+sp07_10_x_m <- apply.monthly(sp07_10_x, sum)
+
+# Calculate average and standard deviation
+mu <- mean(sp07_10_x)
+sigma <- sd(sp07_10_x)
+
+# Plot histogram
+hist(sp07_10_x, nclass = 20, probability = TRUE, main = "Histogram with Normal Density")
+
+# # dnorm(x, mean, sd) calculates the probability density function (PDF) of the data x with the calculated sample mean and standard deviation; this is known as the method-of-moments.
+# Add the normal density as a red line to histogram
+curve(dnorm(x, mean = mu, sd = sigma), add = TRUE, col = "red", lwd = 2)
+
+# To calculate an estimate of the density of data x, use density(x). This creates a so-called kernel-density estimate (KDE) using a non-parametric method that makes no assumptions about the underlying distribution.
+# Plot non-parametric KDE
+plot(density(sp07_10_x))
+
+# Add the normal density as a red line to KDE
+curve(dnorm(x, mean = mu, sd = sigma), add = TRUE, col = "red", lwd = 2)
+
+# The various plots suggest that the data are heavier tailed than normal
+
+
+## The quantile-quantile plot (Q-Q plot) is a better graphical method for revealing non-normality.
+qqnorm(sp07_10_x)
+qqline(sp07_10_x, col = "red")
+
+## Now, we compare the plot with simulated datasets from normal, Student t and uniform distributions
+n <- length(sp07_10_x)
+
+# Generate n standard normal variables, make a Q-Q plot, add a red line
+x1 <- rnorm(n)
+qqnorm(x1)
+qqline(x1, col = "red")
+
+# Generate n Student t variables, make a Q-Q plot, add a red line
+x2 <- rt(n, df = 4)
+qqnorm(x2)
+qqline(x2, col = "red")
+
+# Generate n standard uniform variables, make a Q-Q plot, add red line
+x3 <- runif(n)
+qqnorm(x3)
+qqline(x3, col = "red")
+
+## Tests of Normality
+skewness(sp07_10_x)
+kurtosis(sp07_10_x)
+jarque.test(as.vector(sp07_10_x))
+
+# If skewness is close to zero, it indicates that the distribution is approximately symmetric. A negative value suggests a heavier tail on the left (left-skewed distribution).
+
+# A higher kurtosis value indicates heavier tails and higher peaks compared to a normal distribution.
+
+# The Jarque-Bera test has a very low p-value (p-value < 2.2e-16), indicating that you can reject the null hypothesis that the data follows a normal distribution.
+
+# Testing normality for longer time horizons
+# As returns are added together over longer time periods, a central limit effect takes place and returns tend to become more normal.
+
+skewness(sp07_10_x_m)
+kurtosis(sp07_10_x_m)
+jarque.test(as.vector(sp07_10_x_m))
+```
