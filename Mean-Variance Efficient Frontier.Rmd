@@ -1,0 +1,97 @@
+---
+title: "Mean-Variance Efficient Frontier"
+author: "Fabrizio Dimino"
+date: "2023-12-03"
+output: word_document
+---
+
+```{r setup}
+library(quantmod)
+
+# Define stock symbols and retrieve data
+Symbols <- c("IVV", "IVE", "IVW")
+
+get_tic_function <- function(x) {
+  getSymbols(x, from = "2010-01-01", to = "2023-11-30", auto.assign = FALSE)
+}
+P_list <- lapply(Symbols, get_tic_function)
+
+# Extract Adjusted Price
+get_adj_price <- function(x) x[, 6]
+P_adj_list <- lapply(P_list, get_adj_price)
+
+# Merge all data into a single dataset
+Prices <- Reduce(merge, P_adj_list)
+R_sub <- na.omit(log(Prices/lag(Prices)))
+colnames(R_sub) <- Symbols
+
+# Calculate annualized metrics
+Mean.Return.annualized <- apply(R_sub, 2, function(x)(mean(x) * 252))
+Volatility.Annualized <- apply(R_sub, 2, function(x)(sd(x) * sqrt(252)))
+SharpeRatio.Annualized <- Mean.Return.annualized / Volatility.Annualized
+result <- data.frame(cbind(Mean.Return.annualized, Volatility.Annualized, SharpeRatio.Annualized))
+colnames(result) <- c("Mean", "Volatility", "SR")
+print(result)
+
+# Calculate portfolio metrics
+Sig_mat <- data.matrix(var(R_sub) * 252)
+
+# function to compute portfolio metrics
+w_function <- function(weights.pfolio) {
+  w_vec <- matrix(weights.pfolio,3,1)
+  mu_p <- t(w_vec)%*%Mean.Return.annualized
+  sig_p <- sqrt(t(w_vec)%*%Sig_mat%*%w_vec)
+  result <- c(mu_p,sig_p)
+  return(result)
+}
+vec_ones <- rep(1, nrow(Sig_mat))
+
+w_0 <- solve(Sig_mat) %*% vec_ones
+w_0 <- w_0 / sum(w_0)
+
+B_mat <- solve(Sig_mat) %*% (diag(vec_ones) - vec_ones %*% t(w_0))
+w_1 <- B_mat %*% Mean.Return.annualized
+
+x <- as.numeric(t(vec_ones) %*% solve(Sig_mat) %*% Mean.Return.annualized)
+SR_pfolio <- (solve(Sig_mat) %*% Mean.Return.annualized) / x
+
+important.metrics<-sapply(data.frame(w_0,w_1,SR_pfolio),w_function)
+important.metrics<-data.frame(important.metrics)
+important.metrics[3,]<-important.metrics[1,]/important.metrics[2,]
+rownames(important.metrics) <- c("mu","sig","SR")
+print(important.metrics)
+
+# def function to compute the optimal portfolios (MVEF) metrics 
+w_A_function <- function(A) {
+  w_vec <- w_0 + (1/A)*w_1
+  mu_p <- t(w_vec)%*%Mean.Return.annualized
+  sig_p <- sqrt(t(w_vec)%*%Sig_mat%*%w_vec)
+  result <- c(mu_p,sig_p)
+  return(result)
+}
+
+# Define a sequence of 1000 risk aversion parameters
+mu_0<-t(w_0)%*%Mean.Return.annualized
+mu_0<-as.numeric(mu_0)
+m<-seq(mu_0,2*max(Mean.Return.annualized),length.out = 1000)
+A_seq <-(m-t(w_0)%*%Mean.Return.annualized)/(t(w_1)%*%Mean.Return.annualized)
+A_seq<-1/A_seq
+
+# Compute optimal portfolios (MVEF) metrics
+ds_A <- t(sapply(A_seq,w_A_function))
+ds_A <- data.frame(ds_A)
+names(ds_A) <- c("mu_p","sig_p")
+ds_A$SR <- (ds_A$mu_p)/ds_A$sig_p
+
+# Plot optimal portfolios metrics (MVEF) and highlight GMV and SR portfolios
+plot(mu_p ~ sig_p, data = ds_A,
+     type = "l", ylab = expression(mu[p]),
+     xlab = expression(sigma[p]),
+     xlim = range(ds_A$sig_p),
+     ylim = range(ds_A$mu_p), main = "MVEF. Points: GMV and SR portfolios")
+points(mu_p ~ sig_p, data = ds_A[which(ds_A$sig_p == important.metrics['sig', 'w_0']), ],
+       col = 1, pch = 20, cex = 1.5)
+points(mu_p ~ sig_p, data = ds_A[which.max(ds_A$SR), ],
+       col = 1, pch = 20, cex = 1.5)
+grid(10)
+```
