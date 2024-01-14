@@ -1,0 +1,79 @@
+---
+title: "financial risk analysis"
+author: "Fabrizio Dimino"
+date: "2023-11-12"
+output:
+  word_document: default
+  pdf_document: default
+---
+
+```{r setup}
+library('qrmdata')
+library('xts')
+
+# Load SP500 index
+data('SP500')
+head(SP500)
+tail(SP500)
+plot(SP500)
+
+# Extract 2007-2010
+sp07_10 <- SP500['2007/2010']
+plot(sp07_10)
+
+
+## In certain risk management scenarios, it may be satisfactory to analyze equity risk through 
+## index modeling. However, for a more granular understanding of risk within a portfolio of 
+## stocks, one can delve deeper into the specific prices of individual shares.
+
+# Load S&P 500 constituents data
+data("SP500_const")
+
+# Extract AMZN and BAC in 2007-2010
+stocks <- SP500_const['2007/2010', c('AMZN','BAC')]
+plot.zoo(stocks)
+
+
+## In the case of a portfolio that is exposed to risk across various countries, it is 
+## essential to take into account the potential risks stemming from foreign exchange (FX) rates.
+
+# Load exchange rate data
+data("JPY_USD")
+data("EUR_USD")
+data("EUR_GBP")
+plot(JPY_USD)
+plot(EUR_USD)
+plot(EUR_GBP)
+
+# Merge them
+fx <- merge(JPY_USD, EUR_USD, EUR_GBP, all = TRUE)
+
+# Extract 2007-2010 data from fx
+fx0710 <- fx["2007/2010", ]
+
+# Plot the exchange rates in fx0710
+plot.zoo(fx0710)
+
+
+## In the process of risk analysis, a critical objective is to model the variations in prices 
+## and rates across various time periods, which are commonly referred to as returns.
+
+# Compute the log-returns of sp07_10 daily and monthly
+sp07_10_x <- diff(log(sp07_10))
+plot(sp07_10_x)
+sp07_10_x_m <- apply.monthly(sp07_10_x, sum)
+plot(sp07_10_x_m, type = 'h')
+
+# Compute the log-returns of stocks daily and monthly
+stocks_x <- diff(log(stocks))
+plot.zoo(stocks_x)
+stocks_m <- apply.monthly(stocks_x, colSums)
+plot.zoo(stocks_m, type = 'h')
+
+# Compute the log-returns of EUR_GBP daily and monthly
+fx_x <- diff(log(EUR_GBP))
+plot(fx_x)
+fx_m <- apply.monthly(fx_x, sum)
+plot(fx_m)
+
+```
