@@ -1,0 +1,95 @@
+---
+title: "Geometric Brownian Motion Simulation and VaR Calculation"
+author: "Fabrizio Dimino"
+date: "2023-11-02"
+output:
+  pdf_document: default
+  word_document: default
+---
+
+
+```{r setup}
+library(zoo)
+library(quantmod)
+library(xts)
+
+# Download SPY data from Yahoo Finance
+getSymbols('SPY', from = '1993-12-31', to = '2022-12-31')
+
+# Calculate monthly returns
+SPY.monthly<-to.monthly(SPY)
+returns_monthly <- na.omit(log(SPY.monthly$SPY.Adjusted/lag(SPY.monthly$SPY.Adjusted)))
+
+# Calibrate parameters
+sigma_hat <- sqrt(12)*sd(returns_monthly)
+sigma_hat
+mu_hat <- 12*mean(returns_monthly)+sigma_hat^2/2
+mu_hat
+
+# Simulate Geometric Brownian Motion
+s0 <- as.numeric(SPY.monthly$SPY.Adjusted[length(SPY.monthly$SPY.Adjusted)])
+dt<-1/12
+
+GBM_t <- function(n){
+  dRt_seq<-rnorm(1/dt,(mu_hat - sigma_hat^2/2)*dt,sigma_hat*sqrt(dt))
+  St<-s0*exp(cumsum(dRt_seq))
+  return(St)
+}
+
+s_mat<-sapply(1:10^5,GBM_t)
+plot(s_mat[,1], type="l",xlab="Month",ylab="Price",main="Geometric Brownian Motion" )
+
+# Statistics of the simulation
+s1_sim<-s_mat[12,]
+F_bar<-mean(s1_sim)
+s1_exp<-s0*exp(mu_hat)
+s1_sig<-sd(s1_sim)
+
+#VaR
+Qc <- quantile(s1_sim,0.05)
+VaR <- F_bar - Qc
+VaR
+
+# Plot the density function of future price with mean and VaR
+plot(density(s1_sim),main = "Density Function of Future Price: Mean and Qc" )
+abline(v = F_bar, lty = 2)
+abline(v = Qc, lty = 2, col = 2)
+```
+
+# VOLATILITY INCREASE BY 5% (MONTHLY DATA)
+
+```{r setup2}
+# Calibrate with increased volatility
+sigma_hat <- sqrt(12)*(sd(returns_monthly)*1.05)
+sigma_hat
+mu_hat <- 12*mean(returns_monthly)+sigma_hat^2/2
+mu_hat
+
+# Simulate with increased volatility
+s0 <- as.numeric(SPY.monthly$SPY.Adjusted[length(SPY.monthly$SPY.Adjusted)])
+dt<-1/12
+
+GBM_t <- function(n){
+  dRt_seq<-rnorm(1/dt,(mu_hat - sigma_hat^2/2)*dt,sigma_hat*sqrt(dt))
+  St<-s0*exp(cumsum(dRt_seq))
+  return(St)
+}
+s_mat<-sapply(1:10^5,GBM_t)
+plot(s_mat[,1], type="l",xlab="Month",ylab="Price",main="Geometric Brownian Motion" )
+
+# Statistics after increasing volatility
+s1_sim<-s_mat[12,]
+F_bar<-mean(s1_sim)
+s1_exp<-s0*exp(mu_hat)
+s1_sig<-sd(s1_sim)
+
+# VaR Calculation after increasing volatility
+Qc <- quantile(s1_sim,0.05)
+VaR <- F_bar - Qc
+VaR
+
+# Plot the density function of future price with increased volatility
+plot(density(s1_sim),main = "Density Function of Future Price: Mean and Qc" )
+abline(v = F_bar, lty = 2)
+abline(v = Qc, lty = 2, col = 2)
+```
