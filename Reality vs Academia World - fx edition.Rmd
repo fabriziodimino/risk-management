@@ -1,0 +1,75 @@
+---
+title: "Reality vs Academia World - fx edition"
+author: "Fabrizio Dimino"
+date: "2023-12-13"
+output: word_document
+---
+
+```{r setup}
+library('qrmdata')
+library('xts')
+library('QRM')
+library(dplyr)
+
+data("GBP_USD")
+data("EUR_USD")
+data("CHF_USD")
+data("JPY_USD")
+data("CNY_USD")
+data("CAD_USD")
+
+# Extract data for specified period
+gbp_usd <- GBP_USD['2005/2020']
+eur_usd <- EUR_USD['2005/2020']
+chf_usd <- CHF_USD['2005/2020']
+jpy_usd <- JPY_USD['2005/2020']
+cny_usd <- CNY_USD['2005/2020']
+cad_usd <- CAD_USD['2005/2020']
+
+# Calculate log-returns and monthly log-returns
+gbp_usd_x <- na.omit(diff(log(gbp_usd)))
+gbp_usd_x_m <- apply.monthly(gbp_usd_x, sum)
+
+eur_usd_x <- na.omit(diff(log(eur_usd)))
+eur_usd_x_m <- apply.monthly(eur_usd_x, sum)
+
+chf_usd_x <- na.omit(diff(log(chf_usd)))
+chf_usd_x_m <- apply.monthly(chf_usd_x, sum)
+
+jpy_usd_x <- na.omit(diff(log(jpy_usd)))
+jpy_usd_x_m <- apply.monthly(jpy_usd_x, sum)
+
+cny_usd_x <- na.omit(diff(log(cny_usd)))
+cny_usd_x_m <- apply.monthly(cny_usd_x, sum)
+
+cad_usd_x <- na.omit(diff(log(cad_usd)))
+cad_usd_x_m <- apply.monthly(cad_usd_x, sum)
+
+
+# Merge log-returns for different currency pairs
+list <- list(gbp_usd_x, eur_usd_x, chf_usd_x, jpy_usd_x, cny_usd_x, cad_usd_x)
+list_b <- list(gbp_usd_x_m, eur_usd_x_m, chf_usd_x_m, jpy_usd_x_m, cny_usd_x_m, cad_usd_x_m)
+
+fx <- Reduce(function(x, y) merge(x, y, all = FALSE), list)
+fx_w <- Reduce(function(x, y) merge(x, y, all = FALSE), list_b)
+
+plot.zoo(fx,type='h')
+plot.zoo(fx_w, type='h')
+
+# Apply the Ljung-Box test to the components of fx and their absolute values
+apply(fx, 2, Box.test, lag = 10, type = 'Ljung')
+apply(abs(fx), 2, Box.test, lag = 10, type = 'Ljung')
+
+# Apply the Ljung-Box test to the components of fx_w and their absolute values
+apply(fx_w, 2, Box.test, lag = 10, type = 'Ljung')
+apply(abs(fx_w), 2, Box.test, lag = 10, type = 'Ljung')
+
+
+## Conclusion
+
+# We observed that the returns demonstrate heavier-tailed behavior, indicating leptokurtic behavior. Additionally, the volatility of return series appears to vary over time, challenging the assumption of stationarity.
+
+## Such a low p-value suggests that there is significant statistical evidence to reject the null hypothesis of no autocorrelation in the data.
+
+## When we use monthly returns, the game changes especially with abs values (p-value = 0.5274).
+```
