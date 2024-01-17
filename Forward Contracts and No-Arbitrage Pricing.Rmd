@@ -1,0 +1,74 @@
+---
+title: "Forward Contracts and No-Arbitrage Pricing"
+author: "Fabrizio Dimino"
+date: "2024-01-17"
+output: word_document
+---
+
+```{r setup}
+# Assume the following:
+r <- 0.01
+sigma <- 0.1
+d <- 0
+S0 <- 100
+k <- 1:5
+
+# Under no-arbitrage pricing it follows that future price of a stock index corresponds to the Geometric Brownian Motion (GBM)
+
+# no-arbitrage pricing: Determine fair value of a k-years forward contract
+forward_prices <- S0 * exp((r-d) * k)
+{plot(k, forward_prices, type = 'o', col = 'blue',
+      xlab = 'Time to Maturity (k-years)', ylab = 'Forward Price',
+      main = 'Forward Price vs Time to Maturity',
+      xlim = c(1, 5), ylim = c(100, max(forward_prices) + 5))
+  grid()}
+
+# As the maturity increases, the price of the forward increases, due to the potential upward movement of the underlying index. The higher the maturity, the higher the “t” in the forward price formula.
+
+
+# Montecarlo simulations pricing
+n <- 10^6
+
+GBM <- function(k) {
+  future_price <- S0 * exp((r - 0.5 * sigma^2) * k + sigma * sqrt(k) * rnorm(n))
+  return(future_price)
+}
+simulated_prices <- matrix(NA, nrow = n, ncol = length(k))
+for (j in 1:length(k)) {
+  simulated_prices[,j] <- GBM(k[j])}
+# distribution of the simulated prices
+boxplot(simulated_prices, col = "lightblue", xlab = "Time to Maturity (k)",
+        ylab = "Simulated Prices", main = "Distribution of Simulated Prices for Different Maturities")
+
+#forward prices
+data.frame(Expected_future_price = apply(simulated_prices, 2, FUN = mean),
+           row.names = c('k=1','k=2','k=3','k=4','k=5'))
+
+# The no-arbitrage price is consistent with risk-neutral estimation under market efficiency assumptions. Therefore, risk-neutral Monte Carlo simulations lead to forward prices estimations similar to the previous no-arbitrage prices estimations. The more the simulations, the less the difference between the two. The box plot shows that for increasing maturity the future price range (max-min) becomes wider. Comparisons between graph in 2.1 and box plot make sense: the higher the maximum value that the price can assume in the future, the higher the forward price (fair fixed future price).
+
+
+# Suppose we are bullish about the stock index, i.e., we believe that the stock market will go up one year from now. At the same time, we have zero capital today. We are planning to materialize a trading strategy using either one-year forward contract, stock index, cash, or a combination of which. Assume we can borrow and lend at the r rate. Given this information, address the following:
+
+# Strategy A: forward contract
+# at t0 long forward, forward price that you believe will be lower than S1 (index price after 1 year)
+# at t1 (after 1 year) buy (-K) and sell (+S1) the stock
+
+PnL_forward <- simulated_prices[,1] - forward_prices[1]
+
+# Strategy B: underlying asset
+# at t0 you borrow money (+S0) at risk free rate,
+# at t0 you buy the stock index (-S0)
+# after 1 year (t1) you sell the stock (+S1) and give back the money to the lender (-S0 * exp(r * 1)=-K)
+
+PnL_underlying <- simulated_prices[,1] - (S0 * exp(r * 1))
+
+# PnL with MonteCarlo simulation
+expected_PnL_forward <- mean(PnL_forward)
+VaR_forward <- expected_PnL_forward - quantile(PnL_forward, 0.05)
+
+expected_PnL_underlying <- mean(PnL_underlying)
+VaR_underlying <- expected_PnL_forward - quantile(PnL_underlying, 0.05) 
+data.frame(StrategyA=c(expected_PnL_forward, VaR_forward),
+           StrategyB=c(expected_PnL_underlying,VaR_underlying),
+           row.names=c("Expected PnL", "VaR 95% PnL"))
+```
