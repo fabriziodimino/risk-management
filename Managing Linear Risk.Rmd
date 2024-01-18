@@ -1,0 +1,119 @@
+---
+title: "Managing Linear Risk"
+author: "Fabrizio Dimino"
+date: "2023-11-13"
+output: word_document
+---
+
+```{r setup}
+# In the world of international trade, volatility is king. Today, I want to share a case study from November 2023 where I helped a U.S. exporter navigate the treacherous waters of currency fluctuations.
+
+# In this case Today’s date is Nov 13, 2023, and a U.S. exporter has been promised a payment of 1,250,000 GBP in Oct 1st, 2024. The spot exchange rate on Nov 13, 2023 is $1.2273. According to the Chicago Mercantile Exchange (CME Group), the exporter can trade GBP/USD contracts with face amount of 62,500 GBP that will expire in Dec 2024. The CME Group states that futures contracts are terminated “on the second business day immediately preceding the third Wednesday of the contract month.
+
+library(quantmod)
+
+# retrieve quotes for the GBP/USD forward contracts
+S0 <- 1.2273 #spot
+Q <- (read.csv('FE535_Forward_Prices.csv')[['Ask']]+read.csv('FE535_Forward_Prices.csv')[['Bid']])/2
+F0 <- S0 + Q/10^4
+names(F0) <- read.csv('FE535_Forward_Prices.csv')[['Name']]
+F0 #forward
+```
+
+## Calibrating the Exchange Rate Process
+
+```{r setup1}
+# Let St denote the GBP/USD exchange rate, i.e. the amount of dollars needed to purchase a single GBP at time t. Under no-arbitrage pricing (risk-neutral valuation), St follows a Geometric Brownian Motion (GBM). Estimate θ using the forward quotes. Note that this a “forward-looking” approach. θ = r − rf denotes the difference between the US risk-free rate and the UK risk-free rate.
+
+theta <- log(F0/S0)*12/1:12
+theta
+
+# For foreign exchange rates, it is common to relate to the interbank lending rate(LIBOR) in terms risk-free rate.
+libor <- read.csv('FE535_Libor_USD_GBP.csv')
+libor <- libor[libor$Dates=='11/13/2023',]
+
+theta1M <- libor['US0001M.Index']/100-libor['BP0001M.Index']/100
+theta3M <- libor['US0003M.Index']/100-libor['BP0003M.Index']/100
+theta6M <- libor['US0006M.Index']/100-libor['BP0006M.Index']/100
+c(theta1M, theta3M, theta6M)
+
+# How does calibrated theta compare with LIBOR rates?
+theta.compare <- matrix(c(theta1M, theta3M, theta6M, theta[1], theta[3], theta[6]), ncol=2)
+rownames(theta.compare)=c('Theta 1M', 'Theta 3M', 'Theta 6M')
+colnames(theta.compare)=c('Libor','Forward-Looking Approach')
+theta.compare
+
+# Calibrating sigma, using the historical returns. Note that this calibration is backward-looking.  
+symbol <- "GBPUSD=X"
+start_date <- "2018-01-01"
+end_date <- "2022-04-03"
+
+GBPUSD <- getSymbols(symbol, from = start_date, to = end_date, src = "yahoo", auto.assign = F)
+GBPUSD <- na.omit(GBPUSD)
+returns <- na.omit(log(GBPUSD$`GBPUSD=X.Adjusted`/lag(GBPUSD$`GBPUSD=X.Adjusted`)))
+head(returns)
+sigma <- sd(returns) *  sqrt(252)
+sigma
+```
+
+## VaR for the Unhedged
+
+```{r setup2}
+# Assume that the exporter does not hedge the exchange rate risk. In this case, the exporter exchanges the GBP on the spot market upon receiving the payment in the future.
+GBM <- function(n) {
+  ST <- S0 * exp((theta[11] - 0.5 * sigma^2) * 11/12 + sigma * sqrt(11/12) * rnorm(n))
+  return(ST)
+}
+
+ST <- GBM(10^6)
+
+# Let VT denote the profit/loss (P&L) of the exporter at delivery time.
+Vt <- 1.25*10^6*(ST - S0) 
+
+Expected_Vt <- mean(Vt)
+VaR_Vt <- Expected_Vt - quantile(Vt, 0.01)
+data.frame(PnL=c(Expected_Vt, VaR_Vt), row.names=c("Expected PnL", "VaR 99% PnL")) 
+```
+
+## Unitary Hedge
+
+```{r setup3}
+# Consider a unitary hedge, in which the exporter shorts 20 futures contracts today and closes the position when the GBP payment is received. If the risk-free rates are fixed and there is no arbitrage,the price of the futures contract should obey to the interest rate parity. Assume that there is no transactions cost, i.e. you are able to buy and sell futures contract with respect to the price implied by the interest rate parity.
+
+units <- 62500
+n.contracts <- 20
+quantity <- units * n.contracts
+
+# Suppose we use the futures contract expiring in Dec 2024.
+F0 <- as.numeric(getSymbols("6BZ24.CME", src = "yahoo", auto.assign = F)["2023-11-13"][,"6BZ24.CME.Adjusted"])
+S1 <- ST
+F1 <- ST*exp(theta[2]*2/12)
+PnL <- quantity * (S1 - F1) - quantity * (S0 - F0)
+Expected_PnL <- mean(PnL)
+VaR_PnL <- Expected_PnL - quantile(PnL, 0.01)
+data.frame(PnL=c(Expected_PnL, VaR_PnL), row.names=c("Expected PnL", "VaR 99% PnL"))
+
+
+# Suppose instead we use the futures contract expiring in Sep 2024 (before delivery).
+GBM <- function(n) {
+  ST <- S0 * exp((theta[10] - 0.5 * sigma^2) * 10/12 + sigma * sqrt(10/12) * rnorm(n))
+  return(ST)
+}
+
+ST <- GBM(10^6)
+F0 <- as.numeric(getSymbols("6BU24.CME", src = "yahoo", auto.assign = F)["2023-11-13"][,"6BU24.CME.Adjusted"])
+S1 <- ST
+
+GBM <- function(n) {
+  ST <- S1 * exp((theta[1] - 0.5 * sigma^2) * 1/12 + sigma * sqrt(1/12) * rnorm(n))
+  return(ST)
+}
+
+S2 <- GBM(10^6)
+PnL <- quantity * (S2 - S1) - quantity * (S0 - F0)
+Expected_PnL <- mean(PnL)
+VaR_PnL <- Expected_PnL - quantile(PnL, 0.01)
+data.frame(PnL=c(Expected_PnL, VaR_PnL), row.names=c("Expected PnL", "VaR 99% PnL"))
+
+# Conclusions: We may notice the highest VaR when we do not use futures (unhedged position). The case without hedging is likely to have the highest VaR due to the full exposure to exchange rate fluctuations. As for unitary hedge, therefore when the exporter uses futures contracts, we observe a higher VaR when he uses September 2024 futures contracts than with the December 2024 futures contract. Using Dec 2024 futures contracts the exporter is exposed only to the basis risk, meaning to the variation of the difference between spot price and future price over the next year. Using a futures contract that expires before delivery (Sep 2024) introduces additional risk: the exporter has a full hedging until the contract expires, then, for the remaining time (until the payment is received), there is a full exposure to exchange rate fluctuations (VaR is still less than the unhedged one, since the time of exposure is shorter).
+```
