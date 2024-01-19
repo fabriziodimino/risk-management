@@ -1,0 +1,153 @@
+---
+title: 'Option Pricing and Variance Reduction Approach: Antithetic Variates'
+author: "Fabrizio Dimino"
+date: "2024-01-19"
+output: word_document
+---
+
+```{r setup}
+# Firstly, we will be pricing a European call option using Monte Carlo simulation.
+
+# We assume:
+mu <- 0.10
+sigma <- 0.15
+S0 <- 120
+r <- 0.03
+K <- 125
+t <- 1
+
+# We proceed with the stock price simulation. In our case risk-neutral valuation is consistent with no-arbitrage pricing, which assures that the option is fairly priced.
+
+GBM <- function(n){
+  Z_seq <- rnorm(n)
+  dRt_seq <- (r - sigma^2/2)*t+sigma*sqrt(t)*Z_seq
+  S1 <- S0*exp(dRt_seq)
+  return(list(S1, Z_seq))
+}
+
+gbm <- GBM(10^3)
+S1_seq <- gbm[[1]]
+Z_seq <- gbm[[2]]
+
+plot(density(S1_seq), main = "Density of simulated stock price", xlab = "Price", ylab = "Density")
+
+# As a summary, estimate E[S1|S0] and V[S1|S0] using the above simulation. 
+S1_exp <- mean(S1_seq)
+S1_var <- var(S1_seq)
+cbind(S1_exp, S1_var)
+
+# simulations vs true-values (closed-form solutions)
+s1_exp<-S0*exp(r)
+s1_var<-(exp(sigma^2)-1)*S0^2*exp(2*r)
+
+sim_vs_true<-data.frame(Mean=c(S1_exp, s1_exp), Var=c(S1_var, s1_var))
+rownames(sim_vs_true)=c('Simulation', 'True Value')
+sim_vs_true
+
+# european call price based on simulations
+c_seq <- pmax(0, S1_seq - K)
+c <- mean(c_seq)*exp(-r*t)
+c
+
+# european call price based on Black-Scholes model
+BS <- function(S, K, r, sigma, t){
+  d2 <- (log(S/K)+((r-sigma^2/2)*t))/(sigma*sqrt(t))
+  d1 <- d2 + sigma*sqrt(t)
+  c <- S*pnorm(d1) - K * exp(-r*t)*pnorm(d2)
+  return(c)
+}
+
+c_bsm <- BS(S0, K, r, sigma, t)
+c_bsm
+
+# The Black-Scholes model provides a closed-form solution for option pricing, while risk-neutral Monte Carlo simulations use numerical methods. Results from Black-Scholes and risk-neutral Monte Carlo simulations differ, but with a higher number of simulations the MC offer increased accuracy and stability. Therefore, with an increasing number of simulations, the prices tend to converge.
+```
+
+
+## Bias - Variance
+
+```{r setup1}
+# In the following task, we will be computing the mean-squared error (MSE) of the estimated option price to assess both its bias and variance. In this regard, the Monte Carlo simulation provides a unique way to do this.
+set.seed(123)
+M <- 100
+GBM_c <- function(n){
+  Z_seq <- rnorm(10^3)
+  dRt_seq <- (r - sigma^2/2)*t+sigma*sqrt(t)*Z_seq
+  S1 <- S0*exp(dRt_seq)
+  c_seq <- pmax(0, S1 - K)
+  c <- mean(c_seq)*exp(-r*t)
+  c
+  return(c)
+}
+
+c_vec <- sapply(1:M, GBM_c)
+c_mean <- mean(c_vec)
+c_mean # average option price across the hundred experiments
+
+squared_errors <- (c_vec - c_bsm)^2
+MSE <- mean(squared_errors)
+MSE
+
+# decomposition MSE
+bias <- mean(c_vec-c_bsm)^2
+variance <- var(c_vec)
+bias
+variance
+```
+
+
+## Variance Reduction Approach
+
+```{r setup2}
+# Computational costs are often a significant consideration when applying Monte Carlo simulation. More accurate answers can always be obtained by performing more simulations at the cost of more computational expense. However, many techniques have been developed to minimize the deviation of estimates without increasing the number of simulations. We will examine one of the approaches called Antithetic Variates.
+
+# The premise behind the above approach can be explained using the theoretical sum of two dependent random variables. For the variance of their sum to be less than the sum of their variances, the covariance between the two must be negative. 
+
+# First, select the first half of the simulated prices (N/2 in total). Second, rather than simulating another half of N/2 prices, let us utilize the first half by multiplying it by −1.
+
+Z <- c(Z_seq[1:500], -Z_seq[1:500])
+dRt_seq <- (r - sigma^2/2)*t+sigma*sqrt(t)*Z
+S1_seq <- S0*exp(dRt_seq)
+
+#  estimate E[S1|S0] and V[S1|S0].
+S1_exp <- mean(S1_seq)
+S1_var <- var(S1_seq)
+cbind(S1_exp, S1_var)
+
+# Given the new 1000 prices, we estimate the price of the European Call option.
+c_seq <- pmax(0, S1_seq - K)
+c <- mean(c_seq)*exp(-r*t)
+c
+
+# We need to measure the MSE of the option price.
+set.seed(123)
+M <- 100
+GBM_c <- function(n){
+  Z_seq <- rnorm(10^3)
+  Z_seq <- c(Z_seq[1:500], -Z_seq[1:500])
+  dRt_seq <- (r - sigma^2/2)*t+sigma*sqrt(t)*Z_seq
+  S1 <- S0*exp(dRt_seq)
+  c_seq <- pmax(0, S1 - K)
+  c <- mean(c_seq)*exp(-r*t)
+  c
+  return(c)
+}
+
+c_vec <- sapply(1:M, GBM_c)
+c_mean <- mean(c_vec)
+c_mean
+
+squared_errors <- (c_vec - c_bsm)^2
+MSE <- mean(squared_errors)
+MSE
+
+# This method reduce the MSE of the option price
+
+# decomposition MSE
+bias <- mean(c_vec-c_bsm)^2
+variance <- var(c_vec)
+bias
+variance
+
+# The reduction in MSE (achieved through antithetic variates) stems from a variance reduction effect. By generating paired paths negative correlated, antithetic variates exploit negative correlation to reduce variance of simulated paths. Therefore, this correlation leads to a reduction in the overall variance of the option price estimates across the hundred experiments. Consequently, since the MSE of estimates can be decomposed into the bias and the variance, the reduction of variance (and a less than proportional increase in bias) enhances the precision of the estimates, reducing overall MSE and making it an effective technique for improving the accuracy of Monte Carlo simulations in option pricing.
+```
