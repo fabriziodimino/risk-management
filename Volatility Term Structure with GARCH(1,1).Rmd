@@ -1,0 +1,185 @@
+---
+title: "Volatility Term Structure with GARCH(1,1)"
+author: "Fabrizio Dimino"
+date: "2024-01-29"
+output: word_document
+---
+## GARCH Simulation
+
+```{r setup1}
+set.seed(123)
+n <- 250 # days
+mu <- 0 # long-term mean return
+w <- 0.1 # omega
+a <- 0.2 # alpha
+b <- 0.5 # beta
+
+sigma_t <- sqrt(w/(1-a-b)) 
+exp_var_d_1_seq <- numeric()
+
+for(i in 1:n) {
+  z_t <- rnorm(1) # innovation
+  epsilon_t <- z_t*sigma_t
+  R_t1 <- mu + epsilon_t # return process
+  exp_var_d_1 <- w + a*(epsilon_t^2) + b*sigma_t^2 # GARCH
+  exp_var_d_1_seq <- c(exp_var_d_1_seq, exp_var_d_1) 
+}
+
+plot(exp_var_d_1_seq, type = "l", col = "blue", xlab = "Days", ylab = "Conditional Variance", main = "Volatility Term Structure")
+abline(h = sigma_t^2, lty = 2)
+grid(10)
+
+# The process starts with the initial point of ω/(1 − α − β) and ends up being a point below that level at the end
+```
+Additionally, it’s important to note that for σ^2 > 0 to hold, the condition of α + β < 1 is necessary. This condition ensures that the volatility process exists in the long term and follows some form of stationarity.
+
+The GARCH(1,1) model captures the dynamic nature of volatility in financial time series data. It does this through two main components:
+
+- Short-term memory (αε_(d)^2): This component reflects the immediate impact of the shocks on current volatility. Larger shocks lead to higher predicted volatility in the next period. The coefficient α quantifies the strength of this short-term dependence, capturing the phenomenon of volatility clustering, where high volatility tends to be followed by more high volatility.
+
+- Long-term memory (βσ_(d)^2): This component accounts for the persistence of volatility over longer timescales. It incorporates the influence of previous volatility on the current level, weighted by the coefficient β. This captures the tendency for periods of high or low volatility to persist for extended durations.
+
+Then, the constant term ω ensures the average volatility converges to a specific equilibrium level in the long term.This essentially guarantees the model doesn't drift away from a realistic representation of the data's underlying volatility dynamics.
+
+To ensure the GARCH(1,1) model behaves reasonably in the long run, it's crucial to establish certain conditions for equilibrium and convergence:
+
+- Non-negative variance: This condition guarantees the model predicts non-negative volatility values.
+
+- Stationarity: This ensures the volatility process doesn't diverge to infinity over time, maintaining long-term stability and preventing unrealistic explosions in predicted volatility.
+
+
+## Forecasting Volatility
+
+The forecasted volatility lines provide a forward-looking perspective on how volatility is expected to evolve in the future. These lines can help identify potential periods of increased or decreased volatility. The forecast lines reveal the interplay between different factors influencing future volatility. This includes:
+
+- Unconditional variance: This represents the baseline level of volatility inherent in the data, independent of recent shocks.
+
+- Past forecast errors: Deviations of previous forecasts from the actual realized volatility are incorporated into the current forecast, reflecting the model's ability to learn and adapt.
+
+- Recent squared residuals: The squared deviations of past return predictions from the actual returns capture the impact of recent shocks on the current volatility forecast.
+```{r setup2}
+forecast_days <- 20 
+exp_var_p <- tail(exp_var_d_1_seq, 1)
+exp_var_seq_p <- exp_var_d_1_seq
+
+for(i in 1:forecast_days){
+  exp_var_p <- w + (a + b) * exp_var_p
+  exp_var_seq_p <- c(exp_var_seq_p, exp_var_p)
+}
+
+# Plot forecasted volatility
+index <- 1:(n + forecast_days)
+forecast_out <- (n + 1):(n + forecast_days)
+
+plot(index, exp_var_seq_p, col = 1, type = 'l', xlab = "Days", ylab = "Conditional Variance", main = "Forecasted Volatility with GARCH(1,1)")
+lines(forecast_out, exp_var_seq_p[forecast_out], col = 2, lwd = 2, type = 'l')
+abline(h = sigma_t^2, lty = 2)
+grid(10)
+```
+GARCH forecasts offer valuable insights into the future volatility changes. This understanding stems from two key considerations:
+
+- Conditional Dependence: GARCH forecasts are based on information available at the current time step (day d). This includes the current estimated volatility level (σ²). Notably, the predicted direction of the next volatility value (whether it increases or decreases) hinges on whether the expected future volatility (exp_d[σ²_d+1]) is less than the current level (σ²).
+
+- Stationarity and Convergence: From a stationarity perspective, volatility is expected to fluctuate around a long-term average level (σ²). If the current volatility is lower than this long-term level, GARCH forecasts predict an upward adjustment to bring it closer to the equilibrium. The speed of this adjustment, however, depends on a crucial parameter: γ = α + β. γ falls within the range (0, 1). A value closer to zero indicates that information from day d has minimal influence on the forecast. In such cases, the process quickly reverts back to the long-term equilibrium. Conversely, a γ value closer to 1 suggests that recent information carries significant weight, leading to a more gradual convergence towards the long-term level.
+
+## Different Parameterization
+
+By repeating the GARCH simulation and forecasting process with different parameterizations (e.g., changing alpha, beta, and omega values), we can observe how alterations in these parameters affect the shape and dynamics of the volatility term structure. Analyzing the differences in the resulting volatility term structures can provide insights into the sensitivity of the model to different conditions and parameter choices.
+```{r setup3}
+# Repeat the above steps for different parameterizations and seeds.
+set.seed(120)
+
+exp_var_d_1_seq <- numeric()
+
+for(i in 1:n) {
+  z_t <- rnorm(1) # innovation
+  epsilon_t <- z_t*sigma_t
+  exp_var_d_1 <- w + a*(epsilon_t^2) + b*sigma_t^2 # GARCH
+  exp_var_d_1_seq <- c(exp_var_d_1_seq, exp_var_d_1) 
+}
+
+exp_var_p <- tail(exp_var_d_1_seq, 1)
+exp_var_seq_p <- exp_var_d_1_seq
+
+for(i in 1:forecast_days){
+  exp_var_p <- w + (a + b) * exp_var_p
+  exp_var_seq_p <- c(exp_var_seq_p, exp_var_p)
+}
+
+# Plot forecasted volatility
+plot(index, exp_var_seq_p, col = 1, type = 'l', xlab = "Days", ylab = "Conditional Variance", main = "Forecasted Volatility with GARCH(1,1)")
+lines(forecast_out, exp_var_seq_p[forecast_out], col = 2, lwd = 2, type = 'l')
+abline(h = sigma_t^2, lty = 2)
+grid(10)
+
+# Test gamma = 0.9
+a <- 0.3
+b <- 0.6
+w <- 0.1/3
+
+exp_var_p <- tail(exp_var_d_1_seq,1)
+exp_var_seq_p <- exp_var_d_1_seq
+
+for(i in 1:forecast_days){
+  exp_var_p <- w + (a+b)*exp_var_p
+  exp_var_seq_p <- c(exp_var_seq_p, exp_var_p)
+}
+
+lines(exp_var_seq_p, col = 1, type = 'l')
+lines(exp_var_seq_p[forecast_out] ~ forecast_out, col= 3, lwd=2)
+legend("topleft", legend = c("Fitted", "Forecast Gamma = 0.7", "Forecast Gamma = 0.9", 'Long Term Variance'), col = c(1, 2, 3), lty = c(1, 1, 1, 2), lwd = c(1, 2, 2, 1))
+```
+The red and green curves, often referred to as the volatility term structure, offer valuable insights into the future trajectory of volatility. They essentially depict how far the current volatility level deviates from its long-term average (mean) and how quickly it's expected to revert back to that equilibrium point. The green curve with a higher γ value exhibits slower convergence towards the long-term mean.This indicates that recent shocks, particularly large squared returns, have a more lasting impact on its projected volatility path. Conversely, the red curve with a γ value of 0.7 displays a faster adjustment, implying that recent shocks have less persistent influence and the volatility is expected to return to its equilibrium level more swiftly.
+
+## Different seed
+```{r setup4}
+
+set.seed(125)
+w <- 0.1 # omega
+a <- 0.2 # alpha
+b <- 0.5 # beta
+
+exp_var_d_1_seq <- numeric()
+
+for(i in 1:n) {
+  z_t <- rnorm(1) # innovation
+  epsilon_t <- z_t*sigma_t
+  R_t1 <- mu + epsilon_t # return process
+  exp_var_d_1 <- w + a*(epsilon_t^2) + b*sigma_t^2 # GARCH
+  exp_var_d_1_seq <- c(exp_var_d_1_seq, exp_var_d_1) 
+}
+
+exp_var_p <- tail(exp_var_d_1_seq, 1)
+exp_var_seq_p <- exp_var_d_1_seq
+
+for(i in 1:forecast_days){
+  exp_var_p <- w + (a + b) * exp_var_p
+  exp_var_seq_p <- c(exp_var_seq_p, exp_var_p)
+}
+
+# Plot forecasted volatility
+plot(index, exp_var_seq_p, col = 1, type = 'l', xlab = "Days", ylab = "Conditional Variance", main = "Forecasted Volatility with GARCH(1,1)")
+lines(forecast_out, exp_var_seq_p[forecast_out], col = 2, lwd = 2, type = 'l')
+abline(h = sigma_t^2, lty = 2)
+grid(10)
+
+# Test gamma = 0.9
+a <- 0.3
+b <- 0.6
+w <- 0.1/3
+
+exp_var_p <- tail(exp_var_d_1_seq,1)
+exp_var_seq_p <- exp_var_d_1_seq
+
+for(i in 1:forecast_days){
+  exp_var_p <- w + (a+b)*exp_var_p
+  exp_var_seq_p <- c(exp_var_seq_p, exp_var_p)
+}
+
+lines(exp_var_seq_p, col = 1, type = 'l')
+lines(exp_var_seq_p[forecast_out] ~ forecast_out, col= 3, lwd=2)
+legend("topleft", legend = c("Fitted", "Forecast Gamma = 0.7", "Forecast Gamma = 0.9", 'Long Term Variance'), col = c(1, 2, 3), lty = c(1, 1, 1, 2), lwd = c(1, 2, 2, 1))
+```
+We can also observe situations where the volatility term structure exhibits a downward slope. This occurs when the current volatility level is above the long-term mean, indicating that the forecast expects volatility to gradually decrease and eventually converge to a lower equilibrium level.
+
+In conclusion, it's essential to recognize the limitations of the GARCH(1,1) model and any simplifications made during the simulation. Market dynamics are complex, and the model assumes stationarity and a specific functional form for volatility dynamics, which may not fully capture all aspects of real-world financial markets.
