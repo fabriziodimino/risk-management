@@ -1,0 +1,169 @@
+---
+title: "Properties CVaR/VaR"
+author: "Fabrizio Dimino"
+date: "2024-02-04"
+output: word_document
+---
+Firstly, I show that the Expected Shortfall (ES) is no greater than the Value at Risk (VaR) when Profit and Loss (P&L) follows a Gaussian distribution.
+
+Let Ft represent the value of a portfolio at time t. The Expected Shortfall (ES) is determined by: 
+\[
+ES(\alpha) = -E[F_t | F_t < -VaR(F_t, \alpha)]
+\]. In situations where the Profit and Loss (P&L) follows a Gaussian distribution, a closed-form expression is available. This arises from the characteristic of the truncated normal distribution:
+
+\[
+E[X | X < b] = \mu - \sigma \frac{\phi(\beta)}{\Phi(\beta)}, \text{ where } \beta = \frac{(b - \mu)}{\sigma} \text{ for } X \sim N(\mu, \sigma^2)
+\]. Here, ϕ(β) is the probability density function (PDF) providing the probability that the standard random variable assumes the value z, while Φ(β) is the cumulative density function (CDF) indicating the probability that the standard normal random variable is <= z.
+
+Consequently, assuming VaR is known, one can leverage the mentioned property to define ES when Ft ∼ N(µF , σ^2F) as follows: \[
+ES(\alpha) = -[\mu_F - \sigma_F \frac{\phi(V_S)}{\Phi(V_S)}], \text{ where } V_S = -\frac{VaR(F_t, \alpha) - \mu_F}{\sigma_F}
+\]
+.
+
+``` {r setup1}
+mu_F <- 1
+sig_F <- 2
+X0 <- rnorm(10^5,mu_F,sig_F)
+VaR_sim <- -quantile(X0,0.05)
+ES_sim <- -mean(X0[X0 < -quantile(X0,0.05)])
+ES_sim < VaR_sim
+
+VaR_gauss <- -(mu_F + sig_F*qnorm(0.05))
+V_S <- (-VaR_gauss - mu_F)/sig_F
+ES_gauss <- -(mu_F - sig_F*dnorm(V_S)/pnorm(V_S))
+
+# since we use the Hull definition, the VaR must be positive and also the ES, thus ES(positive) becomes greater than VaR(positive). 
+ES_gauss > VaR_gauss
+```
+We can broaden the aforementioned analysis to investigate the sensitivity of Expected Shortfall (ES) to different parameterizations by varying the values of µF and σF. This exploration allows us to deepen our understanding of how ES reacts to changes in these parameters.
+
+It's worth noting that Jorion (2010) defines Value at Risk (VaR) as \[
+VaR(F_t, \alpha) = \mu_F - (\mu_F + \sigma_F Z_{\alpha}) = \sigma_F \cdot Z_{1-\alpha}
+\]. In Hull (2012), VaR is commonly interpreted as the bottom α quantile, denoted as \[
+VaR(F_t, \alpha) = -(\mu_F + \sigma_F \cdot Z_{\alpha})
+\]. This aligns with the previous result but without adding µF. This implies the loss at the bottom, in contrast to Jorion's (2010) definition, which represents the relative loss to expected P&L. Under the latter definition, note that VS = Zα. Consequently, we derive \[
+ES(\alpha) = \sigma_F \left( \frac{\phi(Z_{\alpha})}{\alpha} \right) - \mu_F
+\].
+
+Given these definitions, it can be shown that \[
+ES(\alpha) \leq VaR(F_t, \alpha); \sigma_F \left( \frac{\phi(Z_{\alpha})}{\alpha} \right) - \mu_F \leq -(\mu_F + \sigma_F \cdot Z_{\alpha})
+\]. Using the expression, the inequality implies that \[
+\frac{1}{\sqrt{2\pi}} \exp\left(-\frac{(Z_{\alpha}^2)}{2}\right) < -\alpha \cdot Z_{\alpha}
+\], which indeed holds for α ∈ (0, 1).
+
+``` {r setup2}
+alpha <- seq(0.01, 0.99, by = 0.001)
+ES <- numeric(length(alpha))
+VaR <- numeric(length(alpha))
+
+for (i in seq_along(alpha)) {
+  ES[i] <- (1 / sqrt(2 * pi)) * exp(-(qnorm(alpha[i])^2) / 2)
+  VaR[i] <- -alpha[i] * qnorm(alpha[i])
+}
+
+all(ES > VaR)
+```
+
+Furthermore, I demonstrate that VaR is an incoherent risk measure while ES is, considering a credit risk example.
+
+It is important to note that, in line with the diversification principle, default risk diminishes when (at least) two loans exhibit imperfect and positively correlated behavior, despite sharing the same individual risk level. This concept of subadditivity applies to Expected Shortfall (ES) but not to Value at Risk (VaR).
+
+Nevertheless, it's crucial to underscore that, according to Jorion (2010), VaR demonstrates subadditivity when the underlying process adheres to a Gaussian distribution.
+
+To exemplify the incoherence of VaR as a risk measure compared to the coherence of ES, consider the following scenario:
+
+Let's assume two loans, each with an exposure of $1M.
+The probability of default for each loan is 1.3%.
+The default occurrences for each loan are independent of one another.
+The loss given default (LGD) ranges uniformly from $0M to $10M.
+
+In the event of default, all losses between 0% and 100% of the principal are equally probable, assuming LGD follows a uniform distribution.
+
+``` {r setup3}
+# numerically
+N <- 10^6
+PD_1 <- PD_2 <- 0.013
+PD <- c(1 - (PD_1 + PD_2 - PD_1 * PD_2), PD_1 * (1 - PD_2), PD_2 * (1 - PD_1), PD_2 * PD_1)
+
+D_i <- sample(c(0,1,2,3),N,prob = PD, replace = TRUE)
+PNL_1 <- rep(1,N)
+PNL_1[D_i == 1] <- -runif(N,0,10)[D_i == 1]
+PNL_1[D_i == 3] <- -runif(N,0,10)[D_i == 3]
+VaR_Loan1 <- -quantile(PNL_1,0.01)
+print(VaR_Loan1)
+
+ES_1 <- -mean(PNL_1[PNL_1 < - VaR_Loan1])
+print(ES_1)
+
+PNL_2 <- rep(1,N)
+PNL_2[D_i == 2] <- -runif(N,0,10)[D_i == 2]
+PNL_2[D_i == 3] <- -runif(N,0,10)[D_i == 3]
+VaR_Loan2 <- -quantile(PNL_2,0.01)
+print(VaR_Loan2)
+
+ES_2 <- -mean(PNL_2[PNL_2 < - VaR_Loan2])
+print(ES_2)
+
+# portfolio
+PNL <- rep(2,N)
+PNL[D_i == 1] <- 1 - runif(N,0,10)[D_i == 1]
+PNL[D_i == 2] <- 1 - runif(N,0,10)[D_i == 2]
+PNL[D_i == 3] <- - runif(N,0,10)[D_i == 3] - runif(N,0,10)[D_i == 3]
+VaR <- -quantile(PNL,0.01)
+print(VaR)
+
+ES <- -mean(PNL[PNL < - VaR])
+print(ES)
+
+Sum_VaR <- VaR_Loan1 + VaR_Loan2
+data.frame(Sum_VaR, VaR)
+
+Sum_ES <- ES_1 + ES_2
+data.frame(Sum_ES, ES)
+# We can notice how VaR is incoherent risk measure while ES is coherent
+```
+
+Repeat the above for a higher probability of default
+
+``` {r setup4}
+N <- 10^6
+PD_1 <- PD_2 <- 0.1
+PD <- c(1 - (PD_1 + PD_2 - PD_1 * PD_2), PD_1 * (1 - PD_2), PD_2 * (1 - PD_1), PD_2 * PD_1)
+
+D_i <- sample(c(0,1,2,3),N,prob = PD, replace = TRUE)
+PNL_1 <- rep(1,N)
+PNL_1[D_i == 1] <- -runif(N,0,10)[D_i == 1]
+PNL_1[D_i == 3] <- -runif(N,0,10)[D_i == 3]
+VaR_Loan1 <- -quantile(PNL_1,0.01)
+print(VaR_Loan1)
+
+ES_1 <- -mean(PNL_1[PNL_1 < - VaR_Loan1])
+print(ES_1)
+
+PNL_2 <- rep(1,N)
+PNL_2[D_i == 2] <- -runif(N,0,10)[D_i == 2]
+PNL_2[D_i == 3] <- -runif(N,0,10)[D_i == 3]
+VaR_Loan2 <- -quantile(PNL_2,0.01)
+print(VaR_Loan2)
+
+ES_2 <- -mean(PNL_2[PNL_2 < - VaR_Loan2])
+print(ES_2)
+
+# portfolio
+PNL <- rep(2,N)
+PNL[D_i == 1] <- 1 - runif(N,0,10)[D_i == 1]
+PNL[D_i == 2] <- 1 - runif(N,0,10)[D_i == 2]
+PNL[D_i == 3] <- - runif(N,0,10)[D_i == 3] - runif(N,0,10)[D_i == 3]
+VaR <- -quantile(PNL,0.01)
+print(VaR)
+
+ES <- -mean(PNL[PNL < - VaR])
+print(ES)
+
+Sum_VaR <- VaR_Loan1 + VaR_Loan2
+data.frame(Sum_VaR, VaR)
+
+Sum_ES <- ES_1 + ES_2
+data.frame(Sum_ES, ES)
+# We can notice when we change the probability of default VaR < VaR_1+VaR_2
+```
